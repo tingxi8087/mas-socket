@@ -27,11 +27,12 @@ masSocket.onDisconnect = (client, type) => {
 };
 
 // 注册中间件 - 日志记录
-masSocket.use(async ({ body, user, fetchId, header }) => {
+masSocket.use(async ({ body, user, fetchId, header, event }) => {
   console.log(`📨 [中间件] 收到消息来自 ${user.id}:`, {
     code: body.code,
-    event: header.event || 'unknown',
+    event: event,
     fetchId,
+    header,
   });
   // 不调用 reply，继续传递到事件处理器
 });
@@ -154,8 +155,34 @@ masSocket.on('join-group', async ({ reply, body, user }) => {
     data: {
       group: groupName,
       groups: masSocket.groups[groupName] || [],
+      userGroups: user.groups,
     },
     msg: 'Joined group',
+  });
+});
+
+// 注册事件处理器 - 离开组
+masSocket.on('leave-group', async ({ reply, body, user }) => {
+  const groupName = body.data?.group;
+  if (!groupName) {
+    reply({
+      code: 400,
+      data: null,
+      msg: 'Group name is required',
+    });
+    return;
+  }
+
+  masSocket.removeGroup(groupName, user.id);
+  console.log(`👋 [Leave Group] ${user.id} 离开组: ${groupName}`);
+
+  reply({
+    code: 200,
+    data: {
+      group: groupName,
+      userGroups: user.groups,
+    },
+    msg: 'Left group',
   });
 });
 
@@ -214,26 +241,6 @@ masSocket.on('broadcast-message', async ({ reply, body }) => {
   });
 });
 
-// 定期向所有客户端发送心跳
-setInterval(() => {
-  const clients = masSocket.clientsList;
-  if (clients.length > 0) {
-    console.log(`💓 [Heartbeat] 向 ${clients.length} 个客户端发送心跳`);
-    masSocket
-      .fetch(
-        clients.map((c) => c.id),
-        'heartbeat',
-        {
-          serverTime: new Date().toISOString(),
-          connectedClients: clients.length,
-        },
-        { hasReply: false }
-      )
-      .catch((error) => {
-        console.error('心跳发送失败:', error);
-      });
-  }
-}, 30000); // 每 30 秒
 
 // 绑定到 Express 应用
 app.get('/', (req, res) => {
@@ -246,6 +253,16 @@ app.get('/', (req, res) => {
         body { font-family: Arial, sans-serif; padding: 20px; }
         .status { padding: 10px; background: #f0f0f0; border-radius: 4px; margin: 10px 0; }
         .info { margin: 10px 0; }
+        .clients-list { margin: 10px 0; }
+        .client-item { padding: 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px; margin: 5px 0; }
+        .client-id { font-family: monospace; font-weight: bold; color: #007bff; }
+        .client-groups { margin-top: 5px; font-size: 0.9em; color: #666; }
+        .group-badge { display: inline-block; padding: 2px 8px; background: #28a745; color: white; border-radius: 12px; margin: 2px; font-size: 0.85em; }
+        .groups-list { margin: 10px 0; }
+        .group-item { padding: 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px; margin: 5px 0; }
+        .group-name { font-weight: bold; color: #28a745; }
+        .group-members { margin-top: 5px; font-size: 0.9em; }
+        .member-id { font-family: monospace; color: #007bff; }
       </style>
     </head>
     <body>
@@ -256,6 +273,48 @@ app.get('/', (req, res) => {
         <strong>连接数:</strong> ${masSocket.clientsList.length}<br>
         <strong>组数:</strong> ${Object.keys(masSocket.groups).length}
       </div>
+      
+      <div class="info">
+        <h3>当前连接的客户端 (${masSocket.clientsList.length}):</h3>
+        <div class="clients-list">
+          ${masSocket.clientsList.length === 0 
+            ? '<p style="color: #999;">暂无连接的客户端</p>'
+            : masSocket.clientsList.map(client => `
+              <div class="client-item">
+                <div class="client-id">${client.id}</div>
+                <div class="client-groups">
+                  ${client.groups.length > 0 
+                    ? `组: ${client.groups.map(g => `<span class="group-badge">${g}</span>`).join('')}`
+                    : '<span style="color: #999;">未加入任何组</span>'
+                  }
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+
+      <div class="info">
+        <h3>分组信息 (${Object.keys(masSocket.groups).length}):</h3>
+        <div class="groups-list">
+          ${Object.keys(masSocket.groups).length === 0
+            ? '<p style="color: #999;">暂无分组</p>'
+            : Object.entries(masSocket.groups).map(([groupName, members]) => `
+              <div class="group-item">
+                <div class="group-name">${groupName}</div>
+                <div class="group-members">
+                  成员数: ${members.length}<br>
+                  ${members.length > 0 
+                    ? `成员: ${members.map(id => `<span class="member-id">${id}</span>`).join(', ')}`
+                    : '无成员'
+                  }
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+
       <div class="info">
         <h3>可用事件:</h3>
         <ul>
@@ -295,8 +354,8 @@ const server = app.listen(PORT, () => {
   console.log(`\n💡 提示: 打开 test/index.html 进行调试\n`);
 });
 
-// 绑定 WebSocket 服务器
-masSocket.bind(app);
+// 绑定 WebSocket 服务器（传递服务器实例）
+masSocket.bind(server);
 
 // 优雅关闭
 process.on('SIGINT', () => {

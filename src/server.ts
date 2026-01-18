@@ -1,6 +1,7 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import { randomUUID } from 'crypto';
 import type { Express } from 'express';
+import type { Server as HttpServer } from 'http';
 import type {
   FetchConfig,
   User,
@@ -26,6 +27,7 @@ type EventHandler = (args: {
   user: User;
   fetchId: string;
   header: Record<string, string>;
+  event: string;
 }) => Promise<void>;
 
 /**
@@ -193,6 +195,7 @@ class MasSocketServer {
             user,
             fetchId,
             header,
+            event,
           });
         } catch (error) {
           console.error('Middleware error:', error);
@@ -219,6 +222,7 @@ class MasSocketServer {
               user,
               fetchId,
               header,
+              event,
             });
           } catch (error) {
             console.error(`Event handler error for ${event}:`, error);
@@ -269,6 +273,38 @@ class MasSocketServer {
     if (connection) {
       if (!connection.user.groups.includes(group)) {
         connection.user.groups.push(group);
+      }
+    }
+  }
+
+  /**
+   * 将客户端从指定组中移除
+   * @param group - 组名
+   * @param id - 客户端 ID
+   */
+  removeGroup(group: string, id: string): void {
+    if (!this.clients.has(id)) {
+      throw new Error(`Client ${id} not found`);
+    }
+
+    // 从分组映射中移除
+    if (this.groups[group]) {
+      const index = this.groups[group].indexOf(id);
+      if (index > -1) {
+        this.groups[group].splice(index, 1);
+      }
+      // 如果组为空，删除该组
+      if (this.groups[group].length === 0) {
+        delete this.groups[group];
+      }
+    }
+
+    // 更新用户信息
+    const connection = this.clients.get(id);
+    if (connection) {
+      const userGroupIndex = connection.user.groups.indexOf(group);
+      if (userGroupIndex > -1) {
+        connection.user.groups.splice(userGroupIndex, 1);
       }
     }
   }
@@ -449,26 +485,44 @@ class MasSocketServer {
   };
 
   /**
-   * 将 WebSocket 服务器绑定到 Express 应用
+   * 将 WebSocket 服务器绑定到 Express 应用或 HTTP 服务器
    * 将 WebSocket 功能集成到现有的 Express 应用中
-   * @param app - Express 应用实例
+   * @param appOrServer - Express 应用实例或 HTTP 服务器实例
    */
-  bind(app: Express): void {
-    const server = (app as any).listen?.() || (app as any).get?.('server');
-    if (!server) {
-      throw new Error(
-        'Express app must have a server instance. Call app.listen() first or pass the server instance.'
-      );
+  bind(appOrServer: Express | HttpServer): void {
+    let server: HttpServer;
+
+    // 判断是 Express app 还是 HTTP Server
+    // Express app 有 use、get、post 等路由方法，HTTP Server 没有
+    const isExpressApp =
+      typeof (appOrServer as any).use === 'function' &&
+      typeof (appOrServer as any).get === 'function' &&
+      typeof (appOrServer as any).post === 'function';
+
+    if (isExpressApp) {
+      // 是 Express app，尝试获取服务器实例
+      // Express 5 中，app 可能还没有服务器实例，需要从 listen 返回的服务器获取
+      // 或者使用 app.get('server') 获取（如果已设置）
+      const expressApp = appOrServer as Express;
+      const existingServer = (expressApp as any).get?.('server') as HttpServer | undefined;
+      
+      if (existingServer) {
+        server = existingServer;
+      } else {
+        throw new Error(
+          'Express app must have a server instance. Please call app.listen() first and pass the returned server instance, or use bind(server) instead.'
+        );
+      }
+    } else {
+      // 是 HTTP Server 实例
+      server = appOrServer as HttpServer;
     }
 
     this.wss = new WebSocketServer({ server });
 
-    this.wss.on('connection', (ws: WebSocket, req) => {
-      console.log("###");
-      
-      // 从请求中提取用户信息（这里简化处理，实际应该从认证信息中获取）
-      // 默认使用 IP 地址作为 ID，实际应用中应该从 token 或 session 中获取
-      const clientId = req.socket.remoteAddress || randomUUID();
+    this.wss.on('connection', (ws: WebSocket) => {
+      // 使用 randomUUID 生成唯一的客户端 ID
+      const clientId = randomUUID();
       const user: User = {
         id: clientId,
         groups: [],
@@ -483,6 +537,19 @@ class MasSocketServer {
 
       // 触发连接回调
       this.onConnect(user);
+
+      // 连接成功后，自动发送系统 ID 信息给客户端
+      this.sendMessage(ws, {
+        type: 'event',
+        event: '_system_id',
+        body: {
+          code: 200,
+          data: {
+            id: clientId,
+          },
+          msg: 'Connection established',
+        },
+      });
 
       // 处理消息
       ws.on('message', (data: Buffer) => {

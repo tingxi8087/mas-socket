@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MasSocket 调试页面</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18",
+        "react-dom/client": "https://esm.sh/react-dom@18/client"
+      }
+    }
+  </script>
   <style>
     * {
       margin: 0;
@@ -123,362 +131,589 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🔌 MasSocket 调试页面</h1>
-
-    <!-- 连接控制 -->
-    <div class="section">
-      <h2>连接控制</h2>
-      <div class="input-group">
-        <label>服务器地址:</label>
-        <input type="text" id="serverUrl" value="ws://localhost:3000" style="flex: 1;">
-      </div>
-      <div class="controls">
-        <button id="connectBtn" onclick="connect()">连接</button>
-        <button id="disconnectBtn" onclick="disconnect()" disabled>断开</button>
-        <span id="status" class="status disconnected">未连接</span>
-      </div>
-    </div>
-
-    <!-- 事件监听 -->
-    <div class="section">
-      <h2>事件监听</h2>
-      <div class="input-group">
-        <label>事件名称:</label>
-        <input type="text" id="eventName" value="message" placeholder="例如: message">
-        <button onclick="registerEventHandler()">注册监听</button>
-      </div>
-      <div class="controls">
-        <button onclick="testEchoEvent()">测试 Echo 事件</button>
-        <button onclick="testTimeEvent()">测试时间事件</button>
-      </div>
-    </div>
-
-    <!-- 请求-响应 -->
-    <div class="section">
-      <h2>请求-响应 (Fetch)</h2>
-      <div class="input-group">
-        <label>事件名称:</label>
-        <input type="text" id="fetchEvent" value="ping" placeholder="例如: ping">
-      </div>
-      <div class="input-group">
-        <label>请求数据:</label>
-        <input type="text" id="fetchData" value='{"message": "hello"}' style="flex: 1;" placeholder='JSON 格式'>
-      </div>
-      <div class="controls">
-        <button onclick="sendFetch()">发送请求</button>
-        <button onclick="sendFetchNoReply()">发送请求(无回复)</button>
-      </div>
-    </div>
-
-    <!-- 中间件测试 -->
-    <div class="section">
-      <h2>中间件测试</h2>
-      <div class="controls">
-        <button onclick="registerMiddleware()">注册日志中间件</button>
-        <button onclick="testMiddlewareEvent()">测试中间件事件</button>
-      </div>
-    </div>
-
-    <!-- 配置管理 -->
-    <div class="section">
-      <h2>配置管理</h2>
-      <div class="input-group">
-        <label>最大等待时间:</label>
-        <input type="number" id="maxWait" value="10000" min="1000" step="1000">
-        <label>最大重连次数:</label>
-        <input type="number" id="maxReconnect" value="5" min="0" step="1">
-      </div>
-      <div class="controls">
-        <button onclick="updateConfig()">更新配置</button>
-        <button onclick="showConfig()">显示配置</button>
-      </div>
-    </div>
-
-    <!-- 日志输出 -->
-    <div class="section">
-      <h2>日志输出</h2>
-      <div class="controls">
-        <button onclick="clearLog()">清空日志</button>
-      </div>
-      <div id="log" class="log"></div>
-    </div>
-  </div>
-
+  <div id="root"></div>
+  
   <script src="../dist/client/index.iife.js"></script>
-  <script>
-    let client = null;
+  <script type="module">
+    import React, { useState, useEffect, useRef } from 'react';
+    import { createRoot } from 'react-dom/client';
 
-    function log(message, type = 'info') {
-      const logEl = document.getElementById('log');
-      const entry = document.createElement('div');
-      entry.className = `log-entry ${type}`;
-      const time = new Date().toLocaleTimeString();
-      entry.textContent = `[${time}] ${message}`;
-      logEl.appendChild(entry);
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    function App() {
+      const [serverUrl, setServerUrl] = useState('ws://localhost:3000');
+      const [status, setStatus] = useState('disconnected');
+      const [eventName, setEventName] = useState('message');
+      const [fetchEvent, setFetchEvent] = useState('ping');
+      const [fetchData, setFetchData] = useState('{"message": "hello"}');
+      const [maxWait, setMaxWait] = useState(10000);
+      const [maxReconnect, setMaxReconnect] = useState(5);
+      const [groupName, setGroupName] = useState('');
+      const [broadcastGroupName, setBroadcastGroupName] = useState('');
+      const [broadcastMessage, setBroadcastMessage] = useState('');
+      const [logs, setLogs] = useState([]);
+      const clientRef = useRef(null);
+      const statusCheckIntervalRef = useRef(null);
 
-    function clearLog() {
-      document.getElementById('log').innerHTML = '';
-    }
-
-    function updateStatus(status) {
-      const statusEl = document.getElementById('status');
-      statusEl.textContent = status === 'connected' ? '已连接' : 
-                            status === 'connecting' ? '连接中' : '未连接';
-      statusEl.className = `status ${status}`;
-      document.getElementById('connectBtn').disabled = status === 'connected' || status === 'connecting';
-      document.getElementById('disconnectBtn').disabled = status !== 'connected';
-    }
-
-    function connect() {
-      const url = document.getElementById('serverUrl').value;
-      if (!url) {
-        log('请输入服务器地址', 'error');
-        return;
-      }
-
-      try {
-        client = new MasSocketClinet();
-        updateStatus('connecting');
-        log(`正在连接到 ${url}...`, 'info');
-
-        client.onDisconnect = () => {
-          updateStatus('disconnected');
-          log('连接已断开', 'warn');
-        };
-
-        client.connect(url);
-        
-        // 监听连接状态变化
-        const checkStatus = setInterval(() => {
-          const config = client.getConfig();
-          if (config.status === 'connected') {
-            updateStatus('connected');
-            log('连接成功！', 'success');
-            clearInterval(checkStatus);
-          } else if (config.status === 'disconnected' && config.status !== 'connecting') {
-            updateStatus('disconnected');
-            log('连接失败', 'error');
-            clearInterval(checkStatus);
-          }
-        }, 100);
-
-        setTimeout(() => {
-          clearInterval(checkStatus);
-        }, 5000);
-
-      } catch (error) {
-        log(`连接错误: ${error.message}`, 'error');
-        updateStatus('disconnected');
-      }
-    }
-
-    function disconnect() {
-      if (client) {
-        client.close();
-        client = null;
-        updateStatus('disconnected');
-        log('已断开连接', 'info');
-      }
-    }
-
-    function registerEventHandler() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      const eventName = document.getElementById('eventName').value;
-      if (!eventName) {
-        log('请输入事件名称', 'error');
-        return;
-      }
-
-      client.on(eventName, async ({ reply, body, fetchId, header }) => {
-        log(`收到事件 [${eventName}]: ${JSON.stringify(body)}`, 'success');
-        log(`  fetchId: ${fetchId}`, 'info');
-        log(`  header: ${JSON.stringify(header)}`, 'info');
-        
-        // 自动回复
-        reply({
-          code: 200,
-          data: { received: true, event: eventName },
-          msg: 'Event received'
-        });
-      });
-
-      log(`已注册事件监听器: ${eventName}`, 'success');
-    }
-
-    function testEchoEvent() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      client.on('echo', async ({ reply, body }) => {
-        log(`Echo 事件: ${JSON.stringify(body)}`, 'success');
-        reply({
-          code: 200,
-          data: { echo: body.data },
-          msg: 'Echo success'
-        });
-      });
-
-      log('已注册 Echo 事件监听器', 'success');
-    }
-
-    function testTimeEvent() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      client.on('time', async ({ reply, body }) => {
-        const now = new Date().toISOString();
-        log(`Time 事件: ${JSON.stringify(body)}`, 'success');
-        reply({
-          code: 200,
-          data: { time: now },
-          msg: 'Time success'
-        });
-      });
-
-      log('已注册 Time 事件监听器', 'success');
-    }
-
-    async function sendFetch() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      const event = document.getElementById('fetchEvent').value;
-      const dataStr = document.getElementById('fetchData').value;
-      
-      if (!event) {
-        log('请输入事件名称', 'error');
-        return;
-      }
-
-      let data;
-      try {
-        data = dataStr ? JSON.parse(dataStr) : {};
-      } catch (e) {
-        log('数据格式错误，使用空对象', 'warn');
-        data = {};
-      }
-
-      try {
-        log(`发送请求: ${event}`, 'info');
-        const response = await client.fetch(event, data);
-        log(`收到回复: ${JSON.stringify(response)}`, 'success');
-      } catch (error) {
-        log(`请求失败: ${error.message}`, 'error');
-      }
-    }
-
-    async function sendFetchNoReply() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      const event = document.getElementById('fetchEvent').value;
-      const dataStr = document.getElementById('fetchData').value;
-      
-      if (!event) {
-        log('请输入事件名称', 'error');
-        return;
-      }
-
-      let data;
-      try {
-        data = dataStr ? JSON.parse(dataStr) : {};
-      } catch (e) {
-        log('数据格式错误，使用空对象', 'warn');
-        data = {};
-      }
-
-      try {
-        log(`发送请求(无回复): ${event}`, 'info');
-        await client.fetch(event, data, { hasReply: false });
-        log('请求已发送（无回复）', 'success');
-      } catch (error) {
-        log(`请求失败: ${error.message}`, 'error');
-      }
-    }
-
-    function registerMiddleware() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      client.use(async ({ body, fetchId, header, reply }) => {
-        log(`[中间件] 收到消息: ${JSON.stringify(body)}`, 'info');
-        log(`[中间件] fetchId: ${fetchId}`, 'info');
-        // 不调用 reply，继续传递
-      });
-
-      log('已注册日志中间件', 'success');
-    }
-
-    function testMiddlewareEvent() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      client.on('middleware-test', async ({ reply, body }) => {
-        log(`中间件测试事件: ${JSON.stringify(body)}`, 'success');
-        reply({
-          code: 200,
-          data: { processed: true },
-          msg: 'Processed by middleware'
-        });
-      });
-
-      log('已注册中间件测试事件监听器', 'success');
-    }
-
-    function updateConfig() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      const maxWait = parseInt(document.getElementById('maxWait').value);
-      const maxReconnect = parseInt(document.getElementById('maxReconnect').value);
-
-      client.setConfig({
-        maxReconnectCount: maxReconnect,
-        maxConnectTimeout: maxWait
-      });
-
-      client.fetchConfig = {
-        ...client.fetchConfig,
-        maxWait: maxWait
+      const log = (message, type = 'info') => {
+        const time = new Date().toLocaleTimeString();
+        setLogs(prev => [...prev, { time, message, type }]);
       };
 
-      log(`配置已更新: maxWait=${maxWait}, maxReconnect=${maxReconnect}`, 'success');
+      const clearLog = () => {
+        setLogs([]);
+      };
+
+      const updateStatus = (newStatus) => {
+        setStatus(newStatus);
+      };
+
+      const connect = () => {
+        if (!serverUrl) {
+          log('请输入服务器地址', 'error');
+          return;
+        }
+
+        try {
+          clientRef.current = new MasSocketClinet();
+          updateStatus('connecting');
+          log(`正在连接到 ${serverUrl}...`, 'info');
+
+          clientRef.current.onDisconnect = () => {
+            updateStatus('disconnected');
+            log('连接已断开', 'warn');
+            if (statusCheckIntervalRef.current) {
+              clearInterval(statusCheckIntervalRef.current);
+              statusCheckIntervalRef.current = null;
+            }
+          };
+
+          // 监听系统 ID 事件
+          clientRef.current.on('_system_id', async ({ body }) => {
+            log(`✅ 收到系统 ID: ${body.data.id}`, 'success');
+          });
+
+          // 监听广播消息事件
+          clientRef.current.on('broadcast-message', async ({ reply, body }) => {
+            log(`📨 [广播消息] 来自 ${body.data.from}: ${body.data.message}`, 'success');
+            log(`   时间: ${body.data.timestamp}`, 'info');
+            reply({
+              code: 200,
+              data: { received: true },
+              msg: 'Broadcast received'
+            });
+          });
+
+          clientRef.current.connect(serverUrl);
+          
+          // 监听连接状态变化
+          statusCheckIntervalRef.current = setInterval(() => {
+            if (clientRef.current) {
+              const config = clientRef.current.getConfig();
+              if (config.status === 'connected') {
+                updateStatus('connected');
+                log('连接成功！', 'success');
+                if (statusCheckIntervalRef.current) {
+                  clearInterval(statusCheckIntervalRef.current);
+                  statusCheckIntervalRef.current = null;
+                }
+              } else if (config.status === 'disconnected' && config.status !== 'connecting') {
+                updateStatus('disconnected');
+                log('连接失败', 'error');
+                if (statusCheckIntervalRef.current) {
+                  clearInterval(statusCheckIntervalRef.current);
+                  statusCheckIntervalRef.current = null;
+                }
+              }
+            }
+          }, 100);
+
+          setTimeout(() => {
+            if (statusCheckIntervalRef.current) {
+              clearInterval(statusCheckIntervalRef.current);
+              statusCheckIntervalRef.current = null;
+            }
+          }, 5000);
+
+        } catch (error) {
+          log(`连接错误: ${error.message}`, 'error');
+          updateStatus('disconnected');
+        }
+      };
+
+      const disconnect = () => {
+        if (clientRef.current) {
+          clientRef.current.close();
+          clientRef.current = null;
+          updateStatus('disconnected');
+          log('已断开连接', 'info');
+          if (statusCheckIntervalRef.current) {
+            clearInterval(statusCheckIntervalRef.current);
+            statusCheckIntervalRef.current = null;
+          }
+        }
+      };
+
+      const registerEventHandler = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        if (!eventName) {
+          log('请输入事件名称', 'error');
+          return;
+        }
+
+        clientRef.current.on(eventName, async ({ reply, body, fetchId, header }) => {
+          log(`收到事件 [${eventName}]: ${JSON.stringify(body)}`, 'success');
+          log(`  fetchId: ${fetchId}`, 'info');
+          log(`  header: ${JSON.stringify(header)}`, 'info');
+          
+          reply({
+            code: 200,
+            data: { received: true, event: eventName },
+            msg: 'Event received'
+          });
+        });
+
+        log(`已注册事件监听器: ${eventName}`, 'success');
+      };
+
+      const testEchoEvent = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        clientRef.current.on('echo', async ({ reply, body }) => {
+          log(`Echo 事件: ${JSON.stringify(body)}`, 'success');
+          reply({
+            code: 200,
+            data: { echo: body.data },
+            msg: 'Echo success'
+          });
+        });
+
+        log('已注册 Echo 事件监听器', 'success');
+      };
+
+      const testTimeEvent = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        clientRef.current.on('time', async ({ reply, body }) => {
+          const now = new Date().toISOString();
+          log(`Time 事件: ${JSON.stringify(body)}`, 'success');
+          reply({
+            code: 200,
+            data: { time: now },
+            msg: 'Time success'
+          });
+        });
+
+        log('已注册 Time 事件监听器', 'success');
+      };
+
+      const sendFetch = async () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        if (!fetchEvent) {
+          log('请输入事件名称', 'error');
+          return;
+        }
+
+        let data;
+        try {
+          data = fetchData ? JSON.parse(fetchData) : {};
+        } catch (e) {
+          log('数据格式错误，使用空对象', 'warn');
+          data = {};
+        }
+
+        try {
+          log(`发送请求: ${fetchEvent}`, 'info');
+          const response = await clientRef.current.fetch(fetchEvent, data);
+          log(`收到回复: ${JSON.stringify(response)}`, 'success');
+        } catch (error) {
+          log(`请求失败: ${error.message}`, 'error');
+        }
+      };
+
+      const sendFetchNoReply = async () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        if (!fetchEvent) {
+          log('请输入事件名称', 'error');
+          return;
+        }
+
+        let data;
+        try {
+          data = fetchData ? JSON.parse(fetchData) : {};
+        } catch (e) {
+          log('数据格式错误，使用空对象', 'warn');
+          data = {};
+        }
+
+        try {
+          log(`发送请求(无回复): ${fetchEvent}`, 'info');
+          await clientRef.current.fetch(fetchEvent, data, { hasReply: false });
+          log('请求已发送（无回复）', 'success');
+        } catch (error) {
+          log(`请求失败: ${error.message}`, 'error');
+        }
+      };
+
+      const registerMiddleware = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        clientRef.current.use(async ({ body, fetchId, header }) => {
+          log(`[中间件] 收到消息: ${JSON.stringify(body)}`, 'info');
+          log(`[中间件] fetchId: ${fetchId}`, 'info');
+        });
+
+        log('已注册日志中间件', 'success');
+      };
+
+      const testMiddlewareEvent = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        clientRef.current.on('middleware-test', async ({ reply, body }) => {
+          log(`中间件测试事件: ${JSON.stringify(body)}`, 'success');
+          reply({
+            code: 200,
+            data: { processed: true },
+            msg: 'Processed by middleware'
+          });
+        });
+
+        log('已注册中间件测试事件监听器', 'success');
+      };
+
+      const updateConfig = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        clientRef.current.setConfig({
+          maxReconnectCount: maxReconnect,
+          maxConnectTimeout: maxWait
+        });
+
+        clientRef.current.fetchConfig = {
+          ...clientRef.current.fetchConfig,
+          maxWait: maxWait
+        };
+
+        log(`配置已更新: maxWait=${maxWait}, maxReconnect=${maxReconnect}`, 'success');
+      };
+
+      const showConfig = () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        const config = clientRef.current.getConfig();
+        log(`当前配置: ${JSON.stringify(config, null, 2)}`, 'info');
+        log(`fetchConfig: ${JSON.stringify(clientRef.current.fetchConfig, null, 2)}`, 'info');
+      };
+
+      const joinGroup = async () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        if (!groupName) {
+          log('请输入组名', 'error');
+          return;
+        }
+
+        try {
+          log(`正在加入组: ${groupName}`, 'info');
+          const response = await clientRef.current.fetch('join-group', { group: groupName });
+          log(`✅ 加入组成功: ${JSON.stringify(response)}`, 'success');
+        } catch (error) {
+          log(`加入组失败: ${error.message}`, 'error');
+        }
+      };
+
+      const leaveGroup = async () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        if (!groupName) {
+          log('请输入组名', 'error');
+          return;
+        }
+
+        try {
+          log(`正在离开组: ${groupName}`, 'info');
+          const response = await clientRef.current.fetch('leave-group', { group: groupName });
+          log(`✅ 离开组成功: ${JSON.stringify(response)}`, 'success');
+        } catch (error) {
+          log(`离开组失败: ${error.message}`, 'error');
+        }
+      };
+
+      const sendBroadcast = async () => {
+        if (!clientRef.current) {
+          log('请先连接服务器', 'error');
+          return;
+        }
+
+        if (!broadcastGroupName) {
+          log('请输入组名', 'error');
+          return;
+        }
+
+        if (!broadcastMessage) {
+          log('请输入消息内容', 'error');
+          return;
+        }
+
+        try {
+          log(`📣 正在向组 ${broadcastGroupName} 广播消息...`, 'info');
+          const response = await clientRef.current.fetch('broadcast', {
+            group: broadcastGroupName,
+            message: broadcastMessage
+          });
+          log(`✅ 广播成功: ${JSON.stringify(response)}`, 'success');
+        } catch (error) {
+          log(`广播失败: ${error.message}`, 'error');
+        }
+      };
+
+      useEffect(() => {
+        log('页面已加载，请连接服务器开始测试', 'info');
+        return () => {
+          if (statusCheckIntervalRef.current) {
+            clearInterval(statusCheckIntervalRef.current);
+          }
+        };
+      }, []);
+
+      const statusText = status === 'connected' ? '已连接' : 
+                         status === 'connecting' ? '连接中' : '未连接';
+
+      return React.createElement('div', { className: 'container' },
+        React.createElement('h1', null, '🔌 MasSocket 调试页面'),
+        
+        // 连接控制
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '连接控制'),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '服务器地址:'),
+            React.createElement('input', {
+              type: 'text',
+              value: serverUrl,
+              onChange: (e) => setServerUrl(e.target.value),
+              style: { flex: 1 }
+            })
+          ),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', {
+              id: 'connectBtn',
+              onClick: connect,
+              disabled: status === 'connected' || status === 'connecting'
+            }, '连接'),
+            React.createElement('button', {
+              id: 'disconnectBtn',
+              onClick: disconnect,
+              disabled: status !== 'connected',
+              className: 'danger'
+            }, '断开'),
+            React.createElement('span', {
+              id: 'status',
+              className: `status ${status}`
+            }, statusText)
+          )
+        ),
+
+        // 事件监听
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '事件监听'),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '事件名称:'),
+            React.createElement('input', {
+              type: 'text',
+              value: eventName,
+              onChange: (e) => setEventName(e.target.value),
+              placeholder: '例如: message'
+            }),
+            React.createElement('button', { onClick: registerEventHandler }, '注册监听')
+          ),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { onClick: testEchoEvent }, '测试 Echo 事件'),
+            React.createElement('button', { onClick: testTimeEvent }, '测试时间事件')
+          )
+        ),
+
+        // 请求-响应
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '请求-响应 (Fetch)'),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '事件名称:'),
+            React.createElement('input', {
+              type: 'text',
+              value: fetchEvent,
+              onChange: (e) => setFetchEvent(e.target.value),
+              placeholder: '例如: ping'
+            })
+          ),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '请求数据:'),
+            React.createElement('input', {
+              type: 'text',
+              value: fetchData,
+              onChange: (e) => setFetchData(e.target.value),
+              style: { flex: 1 },
+              placeholder: 'JSON 格式'
+            })
+          ),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { onClick: sendFetch }, '发送请求'),
+            React.createElement('button', { onClick: sendFetchNoReply }, '发送请求(无回复)')
+          )
+        ),
+
+        // 中间件测试
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '中间件测试'),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { onClick: registerMiddleware }, '注册日志中间件'),
+            React.createElement('button', { onClick: testMiddlewareEvent }, '测试中间件事件')
+          )
+        ),
+
+        // 组管理
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '组管理'),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '组名:'),
+            React.createElement('input', {
+              type: 'text',
+              value: groupName,
+              onChange: (e) => setGroupName(e.target.value),
+              placeholder: '例如: room1',
+              style: { flex: 1 }
+            })
+          ),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { 
+              onClick: joinGroup,
+              className: 'success'
+            }, '加入组'),
+            React.createElement('button', { 
+              onClick: leaveGroup,
+              className: 'danger'
+            }, '离开组')
+          )
+        ),
+
+        // 广播消息
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '广播消息'),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '组名:'),
+            React.createElement('input', {
+              type: 'text',
+              value: broadcastGroupName,
+              onChange: (e) => setBroadcastGroupName(e.target.value),
+              placeholder: '例如: room1',
+              style: { flex: 1 }
+            })
+          ),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '消息内容:'),
+            React.createElement('input', {
+              type: 'text',
+              value: broadcastMessage,
+              onChange: (e) => setBroadcastMessage(e.target.value),
+              placeholder: '输入要广播的消息',
+              style: { flex: 1 }
+            })
+          ),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { 
+              onClick: sendBroadcast,
+              className: 'success'
+            }, '发送广播')
+          )
+        ),
+
+        // 配置管理
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '配置管理'),
+          React.createElement('div', { className: 'input-group' },
+            React.createElement('label', null, '最大等待时间:'),
+            React.createElement('input', {
+              type: 'number',
+              value: maxWait,
+              onChange: (e) => setMaxWait(parseInt(e.target.value)),
+              min: 1000,
+              step: 1000
+            }),
+            React.createElement('label', null, '最大重连次数:'),
+            React.createElement('input', {
+              type: 'number',
+              value: maxReconnect,
+              onChange: (e) => setMaxReconnect(parseInt(e.target.value)),
+              min: 0,
+              step: 1
+            })
+          ),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { onClick: updateConfig }, '更新配置'),
+            React.createElement('button', { onClick: showConfig }, '显示配置')
+          )
+        ),
+
+        // 日志输出
+        React.createElement('div', { className: 'section' },
+          React.createElement('h2', null, '日志输出'),
+          React.createElement('div', { className: 'controls' },
+            React.createElement('button', { onClick: clearLog }, '清空日志')
+          ),
+          React.createElement('div', {
+            id: 'log',
+            className: 'log',
+            ref: (el) => {
+              if (el) {
+                el.scrollTop = el.scrollHeight;
+              }
+            }
+          },
+            logs.map((logEntry, index) =>
+              React.createElement('div', {
+                key: index,
+                className: `log-entry ${logEntry.type}`
+              }, `[${logEntry.time}] ${logEntry.message}`)
+            )
+          )
+        )
+      );
     }
 
-    function showConfig() {
-      if (!client) {
-        log('请先连接服务器', 'error');
-        return;
-      }
-
-      const config = client.getConfig();
-      log(`当前配置: ${JSON.stringify(config, null, 2)}`, 'info');
-      log(`fetchConfig: ${JSON.stringify(client.fetchConfig, null, 2)}`, 'info');
-    }
-
-    // 初始化
-    log('页面已加载，请连接服务器开始测试', 'info');
+    createRoot(document.getElementById('root'))
+      .render(React.createElement(App));
   </script>
 </body>
 </html>
