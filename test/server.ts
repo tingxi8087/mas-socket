@@ -276,12 +276,15 @@ app.get('/', (req, res) => {
     </html>
   `);
 });
-
+app.get("/test", (req, res) => {
+  res.send({code: 200, data: {message: "Hello, World!"}});
+});
 // 启动服务器
 const server = app.listen(PORT, () => {
   console.log(`🚀 MasSocket 服务器启动成功！`);
   console.log(`   地址: http://localhost:${PORT}`);
-  console.log(`   WebSocket: ws://localhost:${PORT}`);
+  console.log(`   WebSocket: ws://localhost:${PORT} (根路径)`);
+  console.log(`   提示: 如需使用自定义路径，请使用 masSocket.bind(server, '/your-path')`);
   console.log(`\n📝 可用事件:`);
   console.log(`   - echo: 回显消息`);
   console.log(`   - ping: 心跳测试`);
@@ -295,7 +298,12 @@ const server = app.listen(PORT, () => {
 });
 
 // 绑定 WebSocket 服务器（传递服务器实例）
-masSocket.bind(server);
+// 默认绑定到根路径 '/'
+// masSocket.bind(server);
+
+// 或者绑定到指定路径，例如：
+masSocket.bind(server, '/ws');
+// masSocket.bind(server, '/socket');
 
 // 优雅关闭
 process.on('SIGINT', () => {

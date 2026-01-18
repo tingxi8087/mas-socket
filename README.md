@@ -35,8 +35,11 @@ const server = app.listen(3000, () => {
 
 const masSocket = new MasSocketServer();
 
-// 绑定到 HTTP 服务器
+// 绑定到 HTTP 服务器（默认路径为 '/'）
 masSocket.bind(server);
+
+// 或者绑定到指定路径
+// masSocket.bind(server, '/ws');
 
 // 监听客户端连接
 masSocket.onConnect = (client) => {
@@ -68,8 +71,11 @@ import MasSocketClinet from 'mas-socket/client';
 
 const client = new MasSocketClinet();
 
-// 连接到服务器
+// 连接到服务器（根路径）
 client.connect('ws://localhost:3000');
+
+// 或者连接到指定路径
+// client.connect('ws://localhost:3000/ws');
 
 // 监听连接断开
 client.onDisconnect = () => {
@@ -93,7 +99,8 @@ console.log('服务器回复:', response);
 <script src="https://unpkg.com/mas-socket/dist/client/index.iife.js"></script>
 <script>
   const client = new MasSocketClinet();
-  client.connect('ws://localhost:3000');
+  client.connect('ws://localhost:3000'); // 根路径
+  // 或 client.connect('ws://localhost:3000/ws'); // 指定路径
   
   client.on('hello', async ({ reply, body }) => {
     console.log('收到消息:', body.data);
@@ -110,13 +117,23 @@ console.log('服务器回复:', response);
 
 #### 方法
 
-##### `bind(appOrServer: Express | HttpServer): void`
+##### `bind(appOrServer: Express | HttpServer, path?: string): void`
 
 将 WebSocket 服务器绑定到 Express 应用或 HTTP 服务器。
 
+**参数：**
+- `appOrServer` - Express 应用实例或 HTTP 服务器实例
+- `path` - WebSocket 路径，默认为 `'/'`。例如 `'/ws'`、`'/socket'` 等
+
 ```typescript
 const masSocket = new MasSocketServer();
+
+// 绑定到根路径（默认）
 masSocket.bind(server);
+
+// 绑定到指定路径
+masSocket.bind(server, '/ws');
+masSocket.bind(server, '/socket');
 ```
 
 ##### `on(event: string, handler: EventHandler): void`
@@ -428,7 +445,7 @@ const app = express();
 const server = app.listen(3000);
 
 const masSocket = new MasSocketServer();
-masSocket.bind(server);
+masSocket.bind(server, '/ws'); // 绑定到 /ws 路径
 
 // 中间件：日志记录
 masSocket.use(async ({ body, user, event }) => {
@@ -494,8 +511,8 @@ client.fetchConfig = {
   hasReply: true
 };
 
-// 连接
-client.connect('ws://localhost:3000');
+// 连接（如果服务器绑定到 /ws 路径，客户端也需要使用相同路径）
+client.connect('ws://localhost:3000/ws');
 
 // 监听系统事件：获取客户端 ID
 client.on('_system_id', async ({ body }) => {

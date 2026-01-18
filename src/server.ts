@@ -580,8 +580,9 @@ class MasSocketServer {
    * 将 WebSocket 服务器绑定到 Express 应用或 HTTP 服务器
    * 将 WebSocket 功能集成到现有的 Express 应用中
    * @param appOrServer - Express 应用实例或 HTTP 服务器实例
+   * @param path - WebSocket 路径，默认为 '/'。例如 '/ws'、'/socket' 等
    */
-  bind(appOrServer: Express | HttpServer): void {
+  bind(appOrServer: Express | HttpServer, path: string = '/'): void {
     let server: HttpServer;
 
     // 判断是 Express app 还是 HTTP Server
@@ -610,7 +611,7 @@ class MasSocketServer {
       server = appOrServer as HttpServer;
     }
 
-    this.wss = new WebSocketServer({ server });
+    this.wss = new WebSocketServer({ server, path });
 
     this.wss.on('connection', (ws: WebSocket) => {
       // 使用 randomUUID 生成唯一的客户端 ID
