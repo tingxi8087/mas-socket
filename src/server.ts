@@ -464,6 +464,8 @@ class MasSocketServer {
     this.wss = new WebSocketServer({ server });
 
     this.wss.on('connection', (ws: WebSocket, req) => {
+      console.log("###");
+      
       // 从请求中提取用户信息（这里简化处理，实际应该从认证信息中获取）
       // 默认使用 IP 地址作为 ID，实际应用中应该从 token 或 session 中获取
       const clientId = req.socket.remoteAddress || randomUUID();

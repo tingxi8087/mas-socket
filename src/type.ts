@@ -40,5 +40,5 @@ export interface InternalMessage {
 export interface PendingFetch {
   resolve: (value: any) => void;
   reject: (reason?: any) => void;
-  timeout: NodeJS.Timeout;
+  timeout: ReturnType<typeof setTimeout>;
 }

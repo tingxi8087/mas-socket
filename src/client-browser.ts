@@ -1,5 +1,3 @@
-import { WebSocket } from 'ws';
-import { randomUUID } from 'crypto';
 import type { FetchConfig, Message, InternalMessage, PendingFetch } from './type';
 
 /**
@@ -42,18 +40,18 @@ type EventHandler = (args: {
 }) => Promise<void>;
 
 /**
- * MasSocket 客户端类
- * 用于连接到 WebSocket 服务器，发送和接收消息
+ * MasSocket 客户端类（浏览器版本）
+ * 使用浏览器原生 WebSocket，无需额外依赖
  */
 class MasSocketClinet {
   private ws: WebSocket | null = null;
   private eventHandlers: Map<string, EventHandler[]> = new Map();
   private middlewares: EventHandler[] = [];
   private pendingFetches: Map<string, PendingFetch> = new Map();
-  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectCount: number = 0;
   private shouldReconnect: boolean = false;
-  private connectTimeout: NodeJS.Timeout | null = null;
+  private connectTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {}
 
@@ -83,7 +81,11 @@ class MasSocketClinet {
    * 生成唯一的请求 ID
    */
   private generateFetchId(): string {
-    return randomUUID();
+    const cryptoApi = globalThis.crypto;
+    if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+      return cryptoApi.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   /**
@@ -219,7 +221,7 @@ class MasSocketClinet {
 
     this.ws = new WebSocket(this.config.url);
 
-    this.ws.on('open', () => {
+    this.ws.addEventListener('open', () => {
       if (this.connectTimeout) {
         clearTimeout(this.connectTimeout);
         this.connectTimeout = null;
@@ -228,19 +230,37 @@ class MasSocketClinet {
       this.reconnectCount = 0;
     });
 
-    this.ws.on('message', (data: Buffer) => {
-      this.handleMessage(data.toString()).catch((error) => {
+    this.ws.addEventListener('message', async (event) => {
+      let data: string | null = null;
+      const payload = event.data;
+
+      if (typeof payload === 'string') {
+        data = payload;
+      } else if (payload instanceof Blob) {
+        data = await payload.text();
+      } else if (payload instanceof ArrayBuffer) {
+        data = new TextDecoder().decode(payload);
+      } else if (ArrayBuffer.isView(payload)) {
+        data = new TextDecoder().decode(payload.buffer);
+      }
+
+      if (data === null) {
+        console.error('Unsupported message data type');
+        return;
+      }
+
+      this.handleMessage(data).catch((error) => {
         console.error('Error handling message:', error);
       });
     });
 
-    this.ws.on('close', () => {
+    this.ws.addEventListener('close', () => {
       this.config.status = 'disconnected';
       this.onDisconnect();
       this.handleReconnect();
     });
 
-    this.ws.on('error', (error) => {
+    this.ws.addEventListener('error', (error) => {
       console.error('WebSocket error:', error);
       if (this.connectTimeout) {
         clearTimeout(this.connectTimeout);
@@ -269,7 +289,7 @@ class MasSocketClinet {
     }
 
     this.reconnectCount++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectCount - 1), 30000); // 指数退避，最大 30 秒
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectCount - 1), 30000);
 
     this.reconnectTimer = setTimeout(() => {
       if (this.shouldReconnect && this.config.status === 'disconnected') {
@@ -465,6 +485,11 @@ class MasSocketClinet {
   use(handler: EventHandler): void {
     this.middlewares.push(handler);
   }
+}
+
+// 方便 HTML 直接引用时挂载到全局
+if (typeof globalThis !== 'undefined') {
+  (globalThis as any).MasSocketClinet = MasSocketClinet;
 }
 
 export default MasSocketClinet;

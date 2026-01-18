@@ -11,6 +11,7 @@
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
+    "express": "^5.2.1",
     "prettier": "^3.7.4",
     "typescript-eslint": "^8.51.0"
   },
@@ -22,7 +23,12 @@
     "@@": "."
   },
   "scripts": {
-    "start": "bun run ./src/index.ts"
+    "start": "bun run ./src/index.ts",
+    "test:server": "bun run ./test/server.ts",
+    "build:client": "bun build ./src/client-browser.ts --target browser --format esm --outfile ./dist/client/index.js",
+    "build:client:iife": "bun build ./src/client-browser.ts --target browser --format iife --outfile ./dist/client/index.iife.js",
+    "build:server": "bun build ./src/server.ts --target node --format esm --outfile ./dist/server/index.js",
+    "build": "bun run build:client && bun run build:client:iife && bun run build:server"
   },
   "dependencies": {
     "@types/express": "^5.0.6",

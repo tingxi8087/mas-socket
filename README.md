@@ -48,6 +48,49 @@ bun start
 bun run ./src/index.ts
 ```
 
+## MasSocket 打包
+
+```bash
+# 构建客户端（ESM + IIFE）和服务端
+bun run build
+
+# 仅构建客户端（ESM）
+bun run build:client
+
+# 仅构建客户端（IIFE，可直接 <script> 引用）
+bun run build:client:iife
+
+# 仅构建服务端
+bun run build:server
+```
+
+产物目录：
+- `dist/client/index.js`（浏览器 ESM）
+- `dist/client/index.iife.js`（浏览器 IIFE）
+- `dist/server/index.js`（服务端 ESM）
+
+## MasSocket 浏览器使用
+
+### ESM
+
+```html
+<script type="module">
+  import MasSocketClinet from './dist/client/index.js';
+  const client = new MasSocketClinet();
+  client.connect('ws://localhost:3000');
+</script>
+```
+
+### HTML 直接引用（IIFE）
+
+```html
+<script src="./dist/client/index.iife.js"></script>
+<script>
+  const client = new MasSocketClinet();
+  client.connect('ws://localhost:3000');
+</script>
+```
+
 ## 项目配置
 
 ### TypeScript 配置
