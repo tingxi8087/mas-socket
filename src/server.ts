@@ -40,6 +40,10 @@ class MasSocketServer {
   private eventHandlers: Map<string, EventHandler[]> = new Map();
   private middlewares: EventHandler[] = [];
   private pendingFetches: Map<string, PendingFetch> = new Map();
+  /** 反向索引：客户端 ID -> 该客户端的所有待处理请求 ID 集合 */
+  private clientPendingFetches: Map<string, Set<string>> = new Map();
+  /** 缓存的客户端列表 */
+  private _cachedClientsList: User[] | null = null;
 
   constructor() {}
 
@@ -55,26 +59,60 @@ class MasSocketServer {
   };
 
   /**
+   * 最大消息大小（字节），默认 1MB
+   * 超过此大小的消息将被拒绝
+   */
+  maxMessageSize: number = 1024 * 1024; // 1MB
+
+  /**
    * 当前连接的客户端列表
    * 存储所有已连接的客户端信息
    */
   get clientsList(): User[] {
-    return Array.from(this.clients.values()).map((conn) => conn.user);
+    if (this._cachedClientsList === null) {
+      this._cachedClientsList = Array.from(this.clients.values()).map(
+        (conn) => conn.user
+      );
+    }
+    return this._cachedClientsList;
   }
 
   /**
-   * 客户端分组映射
-   * key: 组名, value: 该组内的客户端 ID 数组
-   * 用于按组管理客户端，方便批量操作
+   * 更新客户端列表缓存
    */
-  groups: Record<string, string[]> = {};
+  private updateClientsListCache(): void {
+    this._cachedClientsList = Array.from(this.clients.values()).map(
+      (conn) => conn.user
+    );
+  }
+
+  /**
+   * 客户端分组映射（内部使用 Set 以提高性能）
+   * key: 组名, value: 该组内的客户端 ID Set
+   * 用于按组管理客户端，方便批量操作
+   * 
+   * 注意：为了保持向后兼容，通过 getter 提供数组访问
+   */
+  private _groups: Record<string, Set<string>> = {};
+
+  /**
+   * 客户端分组映射（兼容数组访问）
+   * 提供数组形式的访问以保持向后兼容
+   */
+  get groups(): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
+    for (const [group, members] of Object.entries(this._groups)) {
+      result[group] = Array.from(members);
+    }
+    return result;
+  }
 
   /**
    * 客户端连接时的回调函数
    * 当有新的客户端成功连接到服务器时触发
    * @param client - 新连接的客户端用户信息
    */
-  onConnect = (client: User) => {};
+  onConnect = (_client: User) => {};
 
   /**
    * 客户端断开连接时的回调函数
@@ -82,7 +120,7 @@ class MasSocketServer {
    * @param client - 断开连接的客户端用户信息
    * @param type - 断开连接的类型（如 'close', 'error', 'timeout' 等）
    */
-  onDisconnect = (client: User, type: string) => {};
+  onDisconnect = (_client: User, _type: string) => {};
 
   /**
    * 生成唯一的请求 ID
@@ -107,32 +145,37 @@ class MasSocketServer {
     const connection = this.clients.get(clientId);
     if (!connection) return;
 
-    // 清理该客户端的所有待处理请求
-    for (const [fetchId, pending] of this.pendingFetches.entries()) {
-      // 检查是否是来自该客户端的请求（通过检查 pending 中是否有相关信息）
-      // 这里简化处理，实际应该记录每个请求的客户端 ID
-      clearTimeout(pending.timeout);
-      pending.reject(new Error('Client disconnected'));
-      this.pendingFetches.delete(fetchId);
+    // 清理该客户端的所有待处理请求（使用反向索引，O(1) 查找）
+    const pendingFetchIds = this.clientPendingFetches.get(clientId);
+    if (pendingFetchIds) {
+      for (const fetchId of pendingFetchIds) {
+        const pending = this.pendingFetches.get(fetchId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pending.reject(new Error('Client disconnected'));
+          this.pendingFetches.delete(fetchId);
+        }
+      }
+      this.clientPendingFetches.delete(clientId);
     }
 
-    // 从分组中移除
+    // 从分组中移除（使用 Set，O(1) 删除）
     const user = connection.user;
     for (const group of user.groups) {
-      const groupMembers = this.groups[group];
+      const groupMembers = this._groups[group];
       if (groupMembers) {
-        const index = groupMembers.indexOf(clientId);
-        if (index > -1) {
-          groupMembers.splice(index, 1);
-        }
-        if (groupMembers.length === 0) {
-          delete this.groups[group];
+        groupMembers.delete(clientId);
+        if (groupMembers.size === 0) {
+          delete this._groups[group];
         }
       }
     }
 
     // 从客户端列表中移除
     this.clients.delete(clientId);
+    
+    // 更新缓存
+    this.updateClientsListCache();
   }
 
   /**
@@ -143,10 +186,24 @@ class MasSocketServer {
     user: User,
     rawMessage: string
   ): Promise<void> {
+    // 检查消息大小
+    const messageSize = Buffer.byteLength(rawMessage, 'utf8');
+    if (messageSize > this.maxMessageSize) {
+      this.sendMessage(ws, {
+        type: 'reply',
+        body: {
+          code: 413,
+          data: null,
+          msg: `Message too large. Maximum size is ${this.maxMessageSize} bytes`,
+        },
+      });
+      return;
+    }
+
     let message: InternalMessage;
     try {
       message = JSON.parse(rawMessage) as InternalMessage;
-    } catch (error) {
+    } catch (_error) {
       // 消息解析失败，发送错误回复
       this.sendMessage(ws, {
         type: 'reply',
@@ -167,6 +224,18 @@ class MasSocketServer {
       if (pending) {
         clearTimeout(pending.timeout);
         this.pendingFetches.delete(fetchId);
+        
+        // 清理反向索引
+        const clientPendingSet = this.clientPendingFetches.get(
+          pending.clientId
+        );
+        if (clientPendingSet) {
+          clientPendingSet.delete(fetchId);
+          if (clientPendingSet.size === 0) {
+            this.clientPendingFetches.delete(pending.clientId);
+          }
+        }
+        
         pending.resolve(body);
       }
       return;
@@ -260,13 +329,11 @@ class MasSocketServer {
       throw new Error(`Client ${id} not found`);
     }
 
-    // 添加到分组映射
-    if (!this.groups[group]) {
-      this.groups[group] = [];
+    // 添加到分组映射（使用 Set，O(1) 添加和查找）
+    if (!this._groups[group]) {
+      this._groups[group] = new Set();
     }
-    if (!this.groups[group].includes(id)) {
-      this.groups[group].push(id);
-    }
+    this._groups[group].add(id);
 
     // 更新用户信息
     const connection = this.clients.get(id);
@@ -287,15 +354,12 @@ class MasSocketServer {
       throw new Error(`Client ${id} not found`);
     }
 
-    // 从分组映射中移除
-    if (this.groups[group]) {
-      const index = this.groups[group].indexOf(id);
-      if (index > -1) {
-        this.groups[group].splice(index, 1);
-      }
+    // 从分组映射中移除（使用 Set，O(1) 删除）
+    if (this._groups[group]) {
+      this._groups[group].delete(id);
       // 如果组为空，删除该组
-      if (this.groups[group].length === 0) {
-        delete this.groups[group];
+      if (this._groups[group].size === 0) {
+        delete this._groups[group];
       }
     }
 
@@ -328,9 +392,11 @@ class MasSocketServer {
   closeByGroups(groups: string[]): void {
     const clientIds = new Set<string>();
     for (const group of groups) {
-      const members = this.groups[group] || [];
-      for (const id of members) {
-        clientIds.add(id);
+      const members = this._groups[group];
+      if (members) {
+        for (const id of members) {
+          clientIds.add(id);
+        }
       }
     }
     this.close(Array.from(clientIds));
@@ -410,11 +476,24 @@ class MasSocketServer {
       const fetchId = this.generateFetchId();
       const promise = new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => {
+          // 清理反向索引
+          const pending = this.pendingFetches.get(fetchId);
+          if (pending) {
+            const clientPendingSet = this.clientPendingFetches.get(
+              pending.clientId
+            );
+            if (clientPendingSet) {
+              clientPendingSet.delete(fetchId);
+              if (clientPendingSet.size === 0) {
+                this.clientPendingFetches.delete(pending.clientId);
+              }
+            }
+          }
           this.pendingFetches.delete(fetchId);
           reject(new Error(`Request timeout after ${maxWait}ms`));
         }, maxWait);
 
-        this.pendingFetches.set(fetchId, {
+        const pendingFetch: PendingFetch = {
           resolve: (value: any) => {
             clearTimeout(timeout);
             resolve(value);
@@ -424,7 +503,16 @@ class MasSocketServer {
             reject(reason);
           },
           timeout,
-        });
+          clientId,
+        };
+
+        this.pendingFetches.set(fetchId, pendingFetch);
+
+        // 更新反向索引
+        if (!this.clientPendingFetches.has(clientId)) {
+          this.clientPendingFetches.set(clientId, new Set());
+        }
+        this.clientPendingFetches.get(clientId)!.add(fetchId);
       });
 
       promises.push(promise);
@@ -469,11 +557,13 @@ class MasSocketServer {
     const groups = Array.isArray(group) ? group : [group];
     const clientIds = new Set<string>();
 
-    // 收集所有组内的客户端 ID
+    // 收集所有组内的客户端 ID（使用 Set，O(1) 查找）
     for (const groupName of groups) {
-      const members = this.groups[groupName] || [];
-      for (const id of members) {
-        clientIds.add(id);
+      const members = this._groups[groupName];
+      if (members) {
+        for (const id of members) {
+          clientIds.add(id);
+        }
       }
     }
 
@@ -534,6 +624,9 @@ class MasSocketServer {
       };
 
       this.clients.set(clientId, connection);
+
+      // 更新缓存
+      this.updateClientsListCache();
 
       // 触发连接回调
       this.onConnect(user);

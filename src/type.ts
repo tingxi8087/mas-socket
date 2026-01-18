@@ -41,4 +41,6 @@ export interface PendingFetch {
   resolve: (value: any) => void;
   reject: (reason?: any) => void;
   timeout: ReturnType<typeof setTimeout>;
+  /** 客户端 ID，用于快速清理该客户端的所有待处理请求 */
+  clientId: string;
 }
