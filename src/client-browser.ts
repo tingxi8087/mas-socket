@@ -426,7 +426,8 @@ class MasSocketClinet {
         this.pendingFetches.delete(fetchId);
         reject(new Error(`Request timeout after ${maxWait}ms`));
       }, maxWait);
-
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
       this.pendingFetches.set(fetchId, {
         resolve: (value: any) => {
           clearTimeout(timeout);

@@ -22,18 +22,57 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       padding: 20px;
       background: #f5f5f5;
+      height: 100vh;
+      overflow: hidden;
     }
     .container {
-      max-width: 1200px;
+      display: flex;
+      gap: 20px;
+      height: calc(100vh - 40px);
+      max-width: 1600px;
       margin: 0 auto;
+    }
+    .left-panel {
+      flex: 0 0 650px;
+      overflow-y: auto;
+      overflow-x: hidden;
       background: white;
       border-radius: 8px;
       padding: 20px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
+    .left-panel::-webkit-scrollbar {
+      width: 8px;
+    }
+    .left-panel::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+    .left-panel::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+    .left-panel::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      min-width: 0;
+    }
     h1 {
       margin-bottom: 20px;
+      margin-top: 0;
       color: #333;
+      font-size: 24px;
+    }
+    .right-panel h2 {
+      margin-top: 0;
     }
     .section {
       margin-bottom: 30px;
@@ -98,16 +137,44 @@
       min-width: 100px;
       font-weight: 500;
     }
+    .log-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
     .log {
+      flex: 1;
       background: #1e1e1e;
       color: #d4d4d4;
       padding: 15px;
       border-radius: 4px;
       font-family: 'Courier New', monospace;
       font-size: 12px;
-      max-height: 400px;
       overflow-y: auto;
-      margin-top: 10px;
+      overflow-x: auto;
+      min-height: 0;
+    }
+    .log::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .log::-webkit-scrollbar-track {
+      background: #2d2d2d;
+      border-radius: 4px;
+    }
+    .log::-webkit-scrollbar-thumb {
+      background: #555;
+      border-radius: 4px;
+    }
+    .log::-webkit-scrollbar-thumb:hover {
+      background: #777;
     }
     .log-entry {
       margin-bottom: 5px;
@@ -119,8 +186,9 @@
     .log-entry.error { color: #f48771; }
     .log-entry.warn { color: #dcdcaa; }
     .status {
-      display: inline-block;
-      padding: 4px 8px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0px 8px;
       border-radius: 4px;
       font-size: 12px;
       font-weight: 500;
@@ -134,7 +202,8 @@
   <div id="root"></div>
   
   <script src="../dist/client/index.iife.js"></script>
-  <script type="module">
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useRef } from 'react';
     import { createRoot } from 'react-dom/client';
 
@@ -152,6 +221,7 @@
       const [logs, setLogs] = useState([]);
       const clientRef = useRef(null);
       const statusCheckIntervalRef = useRef(null);
+      const logContainerRef = useRef(null);
 
       const log = (message, type = 'info') => {
         const time = new Date().toLocaleTimeString();
@@ -510,210 +580,234 @@
         };
       }, []);
 
+      // 自动滚动日志到底部
+      useEffect(() => {
+        if (logContainerRef.current) {
+          logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+        }
+      }, [logs]);
+
       const statusText = status === 'connected' ? '已连接' : 
                          status === 'connecting' ? '连接中' : '未连接';
 
-      return React.createElement('div', { className: 'container' },
-        React.createElement('h1', null, '🔌 MasSocket 调试页面'),
-        
-        // 连接控制
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '连接控制'),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '服务器地址:'),
-            React.createElement('input', {
-              type: 'text',
-              value: serverUrl,
-              onChange: (e) => setServerUrl(e.target.value),
-              style: { flex: 1 }
-            })
-          ),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', {
-              id: 'connectBtn',
-              onClick: connect,
-              disabled: status === 'connected' || status === 'connecting'
-            }, '连接'),
-            React.createElement('button', {
-              id: 'disconnectBtn',
-              onClick: disconnect,
-              disabled: status !== 'connected',
-              className: 'danger'
-            }, '断开'),
-            React.createElement('span', {
-              id: 'status',
-              className: `status ${status}`
-            }, statusText)
-          )
-        ),
+      return (
+        <div className="container">
+          {/* 左侧操作面板 */}
+          <div className="left-panel">
+            <h1>🔌 MasSocket 调试页面</h1>
+            
+            {/* 连接控制 */}
+            <div className="section">
+              <h2>连接控制</h2>
+              <div className="input-group">
+                <label>服务器地址:</label>
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <div className="controls">
+                <button
+                  id="connectBtn"
+                  onClick={connect}
+                  disabled={status === 'connected' || status === 'connecting'}
+                >
+                  连接
+                </button>
+                <button
+                  id="disconnectBtn"
+                  onClick={disconnect}
+                  disabled={status !== 'connected'}
+                  className="danger"
+                >
+                  断开
+                </button>
+                <span
+                  id="status"
+                  className={`status ${status}`}
+                >
+                  {statusText}
+                </span>
+              </div>
+            </div>
 
-        // 事件监听
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '事件监听'),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '事件名称:'),
-            React.createElement('input', {
-              type: 'text',
-              value: eventName,
-              onChange: (e) => setEventName(e.target.value),
-              placeholder: '例如: message'
-            }),
-            React.createElement('button', { onClick: registerEventHandler }, '注册监听')
-          ),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { onClick: testEchoEvent }, '测试 Echo 事件'),
-            React.createElement('button', { onClick: testTimeEvent }, '测试时间事件')
-          )
-        ),
+            {/* 事件监听 */}
+            <div className="section">
+              <h2>事件监听</h2>
+              <div className="input-group">
+                <label>事件名称:</label>
+                <input
+                  type="text"
+                  value={eventName}
+                  onChange={(e) => setEventName(e.target.value)}
+                  placeholder="例如: message"
+                />
+                <button onClick={registerEventHandler}>注册监听</button>
+              </div>
+              <div className="controls">
+                <button onClick={testEchoEvent}>测试 Echo 事件</button>
+                <button onClick={testTimeEvent}>测试时间事件</button>
+              </div>
+            </div>
 
-        // 请求-响应
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '请求-响应 (Fetch)'),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '事件名称:'),
-            React.createElement('input', {
-              type: 'text',
-              value: fetchEvent,
-              onChange: (e) => setFetchEvent(e.target.value),
-              placeholder: '例如: ping'
-            })
-          ),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '请求数据:'),
-            React.createElement('input', {
-              type: 'text',
-              value: fetchData,
-              onChange: (e) => setFetchData(e.target.value),
-              style: { flex: 1 },
-              placeholder: 'JSON 格式'
-            })
-          ),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { onClick: sendFetch }, '发送请求'),
-            React.createElement('button', { onClick: sendFetchNoReply }, '发送请求(无回复)')
-          )
-        ),
+            {/* 请求-响应 */}
+            <div className="section">
+              <h2>请求-响应 (Fetch)</h2>
+              <div className="input-group">
+                <label>事件名称:</label>
+                <input
+                  type="text"
+                  value={fetchEvent}
+                  onChange={(e) => setFetchEvent(e.target.value)}
+                  placeholder="例如: ping"
+                />
+              </div>
+              <div className="input-group">
+                <label>请求数据:</label>
+                <input
+                  type="text"
+                  value={fetchData}
+                  onChange={(e) => setFetchData(e.target.value)}
+                  style={{ flex: 1 }}
+                  placeholder="JSON 格式"
+                />
+              </div>
+              <div className="controls">
+                <button onClick={sendFetch}>发送请求</button>
+                <button onClick={sendFetchNoReply}>发送请求(无回复)</button>
+              </div>
+            </div>
 
-        // 中间件测试
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '中间件测试'),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { onClick: registerMiddleware }, '注册日志中间件'),
-            React.createElement('button', { onClick: testMiddlewareEvent }, '测试中间件事件')
-          )
-        ),
+            {/* 中间件测试 */}
+            <div className="section">
+              <h2>中间件测试</h2>
+              <div className="controls">
+                <button onClick={registerMiddleware}>注册日志中间件</button>
+                <button onClick={testMiddlewareEvent}>测试中间件事件</button>
+              </div>
+            </div>
 
-        // 组管理
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '组管理'),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '组名:'),
-            React.createElement('input', {
-              type: 'text',
-              value: groupName,
-              onChange: (e) => setGroupName(e.target.value),
-              placeholder: '例如: room1',
-              style: { flex: 1 }
-            })
-          ),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { 
-              onClick: joinGroup,
-              className: 'success'
-            }, '加入组'),
-            React.createElement('button', { 
-              onClick: leaveGroup,
-              className: 'danger'
-            }, '离开组')
-          )
-        ),
+            {/* 组管理 */}
+            <div className="section">
+              <h2>组管理</h2>
+              <div className="input-group">
+                <label>组名:</label>
+                <input
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  placeholder="例如: room1"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <div className="controls">
+                <button
+                  onClick={joinGroup}
+                  className="success"
+                >
+                  加入组
+                </button>
+                <button
+                  onClick={leaveGroup}
+                  className="danger"
+                >
+                  离开组
+                </button>
+              </div>
+            </div>
 
-        // 广播消息
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '广播消息'),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '组名:'),
-            React.createElement('input', {
-              type: 'text',
-              value: broadcastGroupName,
-              onChange: (e) => setBroadcastGroupName(e.target.value),
-              placeholder: '例如: room1',
-              style: { flex: 1 }
-            })
-          ),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '消息内容:'),
-            React.createElement('input', {
-              type: 'text',
-              value: broadcastMessage,
-              onChange: (e) => setBroadcastMessage(e.target.value),
-              placeholder: '输入要广播的消息',
-              style: { flex: 1 }
-            })
-          ),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { 
-              onClick: sendBroadcast,
-              className: 'success'
-            }, '发送广播')
-          )
-        ),
+            {/* 广播消息 */}
+            <div className="section">
+              <h2>广播消息</h2>
+              <div className="input-group">
+                <label>组名:</label>
+                <input
+                  type="text"
+                  value={broadcastGroupName}
+                  onChange={(e) => setBroadcastGroupName(e.target.value)}
+                  placeholder="例如: room1"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <div className="input-group">
+                <label>消息内容:</label>
+                <input
+                  type="text"
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  placeholder="输入要广播的消息"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <div className="controls">
+                <button
+                  onClick={sendBroadcast}
+                  className="success"
+                >
+                  发送广播
+                </button>
+              </div>
+            </div>
 
-        // 配置管理
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '配置管理'),
-          React.createElement('div', { className: 'input-group' },
-            React.createElement('label', null, '最大等待时间:'),
-            React.createElement('input', {
-              type: 'number',
-              value: maxWait,
-              onChange: (e) => setMaxWait(parseInt(e.target.value)),
-              min: 1000,
-              step: 1000
-            }),
-            React.createElement('label', null, '最大重连次数:'),
-            React.createElement('input', {
-              type: 'number',
-              value: maxReconnect,
-              onChange: (e) => setMaxReconnect(parseInt(e.target.value)),
-              min: 0,
-              step: 1
-            })
-          ),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { onClick: updateConfig }, '更新配置'),
-            React.createElement('button', { onClick: showConfig }, '显示配置')
-          )
-        ),
+            {/* 配置管理 */}
+            <div className="section">
+              <h2>配置管理</h2>
+              <div className="input-group">
+                <label>最大等待时间:</label>
+                <input
+                  type="number"
+                  value={maxWait}
+                  onChange={(e) => setMaxWait(parseInt(e.target.value))}
+                  min={1000}
+                  step={1000}
+                />
+                <label>最大重连次数:</label>
+                <input
+                  type="number"
+                  value={maxReconnect}
+                  onChange={(e) => setMaxReconnect(parseInt(e.target.value))}
+                  min={0}
+                  step={1}
+                />
+              </div>
+              <div className="controls">
+                <button onClick={updateConfig}>更新配置</button>
+                <button onClick={showConfig}>显示配置</button>
+              </div>
+            </div>
+          </div>
 
-        // 日志输出
-        React.createElement('div', { className: 'section' },
-          React.createElement('h2', null, '日志输出'),
-          React.createElement('div', { className: 'controls' },
-            React.createElement('button', { onClick: clearLog }, '清空日志')
-          ),
-          React.createElement('div', {
-            id: 'log',
-            className: 'log',
-            ref: (el) => {
-              if (el) {
-                el.scrollTop = el.scrollHeight;
-              }
-            }
-          },
-            logs.map((logEntry, index) =>
-              React.createElement('div', {
-                key: index,
-                className: `log-entry ${logEntry.type}`
-              }, `[${logEntry.time}] ${logEntry.message}`)
-            )
-          )
-        )
+          {/* 右侧日志面板 */}
+          <div className="right-panel">
+            <div className="log-container">
+              <div className="log-header">
+                <h2>📋 日志输出</h2>
+                <button onClick={clearLog}>清空日志</button>
+              </div>
+              <div
+                id="log"
+                className="log"
+                ref={logContainerRef}
+              >
+                {logs.map((logEntry, index) => (
+                  <div
+                    key={index}
+                    className={`log-entry ${logEntry.type}`}
+                  >
+                    [{logEntry.time}] {logEntry.message}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       );
     }
 
     createRoot(document.getElementById('root'))
-      .render(React.createElement(App));
+      .render(<App />);
   </script>
 </body>
 </html>

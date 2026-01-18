@@ -42,11 +42,7 @@ masSocket.use(async ({ header, reply }) => {
   // 示例：检查 header 中的 token
   const token = header['authorization'];
   if (token && token !== 'valid-token') {
-    reply({
-      code: 401,
-      data: null,
-      msg: 'Unauthorized',
-    });
+    reply(null, 401, 'Unauthorized');
     return;
   }
   // 继续传递
@@ -56,94 +52,66 @@ masSocket.use(async ({ header, reply }) => {
 masSocket.on('echo', async ({ reply, body, user }) => {
   console.log(`📢 [Echo] 来自 ${user.id}:`, body.data);
   reply({
-    code: 200,
-    data: {
-      echo: body.data,
-      timestamp: new Date().toISOString(),
-      from: user.id,
-    },
-    msg: 'Echo success',
-  });
+    echo: body.data,
+    timestamp: new Date().toISOString(),
+    from: user.id,
+  }, 200, 'Echo success');
 });
 
 // 注册事件处理器 - Ping
 masSocket.on('ping', async ({ reply, body, user }) => {
   console.log(`🏓 [Ping] 来自 ${user.id}`);
   reply({
-    code: 200,
-    data: {
-      pong: true,
-      serverTime: new Date().toISOString(),
-      clientData: body.data,
-    },
-    msg: 'Pong',
-  });
+    pong: true,
+    serverTime: new Date().toISOString(),
+    clientData: body.data,
+  }, 200, 'Pong');
 });
 
 // 注册事件处理器 - 时间
 masSocket.on('time', async ({ reply, user }) => {
   console.log(`⏰ [Time] 来自 ${user.id}`);
   reply({
-    code: 200,
-    data: {
-      time: new Date().toISOString(),
-      timezone: 'Asia/Shanghai',
-    },
-    msg: 'Time success',
-  });
+    time: new Date().toISOString(),
+    timezone: 'Asia/Shanghai',
+  }, 200, 'Time success');
 });
 
 // 注册事件处理器 - 消息
 masSocket.on('message', async ({ reply, body, user }) => {
   console.log(`💬 [Message] 来自 ${user.id}:`, body.data);
   reply({
-    code: 200,
-    data: {
-      received: true,
-      message: body.data,
-      from: user.id,
-    },
-    msg: 'Message received',
-  });
+    received: true,
+    message: body.data,
+    from: user.id,
+  }, 200, 'Message received');
 });
 
 // 注册事件处理器 - 中间件测试
 masSocket.on('middleware-test', async ({ reply, body, user }) => {
   console.log(`🔧 [Middleware Test] 来自 ${user.id}`);
   reply({
-    code: 200,
-    data: {
-      processed: true,
-      originalData: body.data,
-      processedBy: 'middleware-test handler',
-    },
-    msg: 'Processed by middleware',
-  });
+    processed: true,
+    originalData: body.data,
+    processedBy: 'middleware-test handler',
+  }, 200, 'Processed by middleware');
 });
 
 // 注册事件处理器 - 获取用户信息
 masSocket.on('get-user-info', async ({ reply, user }) => {
   console.log(`👤 [Get User Info] 来自 ${user.id}`);
   reply({
-    code: 200,
-    data: {
-      id: user.id,
-      groups: user.groups,
-      connectedAt: new Date().toISOString(),
-    },
-    msg: 'User info',
-  });
+    id: user.id,
+    groups: user.groups,
+    connectedAt: new Date().toISOString(),
+  }, 200, 'User info');
 });
 
 // 注册事件处理器 - 加入组
 masSocket.on('join-group', async ({ reply, body, user }) => {
   const groupName = body.data?.group;
   if (!groupName) {
-    reply({
-      code: 400,
-      data: null,
-      msg: 'Group name is required',
-    });
+    reply(null, 400, 'Group name is required');
     return;
   }
 
@@ -151,25 +119,17 @@ masSocket.on('join-group', async ({ reply, body, user }) => {
   console.log(`👥 [Join Group] ${user.id} 加入组: ${groupName}`);
 
   reply({
-    code: 200,
-    data: {
-      group: groupName,
-      groups: masSocket.groups[groupName] || [],
-      userGroups: user.groups,
-    },
-    msg: 'Joined group',
-  });
+    group: groupName,
+    groups: masSocket.groups[groupName] || [],
+    userGroups: user.groups,
+  }, 200, 'Joined group');
 });
 
 // 注册事件处理器 - 离开组
 masSocket.on('leave-group', async ({ reply, body, user }) => {
   const groupName = body.data?.group;
   if (!groupName) {
-    reply({
-      code: 400,
-      data: null,
-      msg: 'Group name is required',
-    });
+    reply(null, 400, 'Group name is required');
     return;
   }
 
@@ -177,13 +137,9 @@ masSocket.on('leave-group', async ({ reply, body, user }) => {
   console.log(`👋 [Leave Group] ${user.id} 离开组: ${groupName}`);
 
   reply({
-    code: 200,
-    data: {
-      group: groupName,
-      userGroups: user.groups,
-    },
-    msg: 'Left group',
-  });
+    group: groupName,
+    userGroups: user.groups,
+  }, 200, 'Left group');
 });
 
 // 注册事件处理器 - 广播消息
@@ -192,11 +148,7 @@ masSocket.on('broadcast', async ({ reply, body, user }) => {
   const message = body.data?.message;
 
   if (!groupName || !message) {
-    reply({
-      code: 400,
-      data: null,
-      msg: 'Group name and message are required',
-    });
+    reply(null, 400, 'Group name and message are required');
     return;
   }
 
@@ -213,19 +165,11 @@ masSocket.on('broadcast', async ({ reply, body, user }) => {
       }
     );
     reply({
-      code: 200,
-      data: {
-        sent: true,
-        responses: responses.length,
-      },
-      msg: 'Broadcast sent',
-    });
+      sent: true,
+      responses: responses.length,
+    }, 200, 'Broadcast sent');
   } catch (error) {
-    reply({
-      code: 500,
-      data: null,
-      msg: `Broadcast failed: ${error}`,
-    });
+    reply(null, 500, `Broadcast failed: ${error}`);
   }
 });
 
@@ -233,12 +177,8 @@ masSocket.on('broadcast', async ({ reply, body, user }) => {
 masSocket.on('broadcast-message', async ({ reply, body }) => {
   console.log(`📨 [Broadcast Message] 收到广播:`, body.data);
   reply({
-    code: 200,
-    data: {
-      received: true,
-    },
-    msg: 'Broadcast received',
-  });
+    received: true,
+  }, 200, 'Broadcast received');
 });
 
 

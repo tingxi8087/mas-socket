@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "noEmit": false,
+    "module": "ESNext",
+    "moduleResolution": "node"
+  },
+  "include": [
+    "src/server.ts",
+    "src/client-browser.ts",
+    "src/type.ts"
+  ]
+}

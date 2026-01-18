@@ -1,140 +1,549 @@
-# mas-ts
+# MasSocket
 
-这是一个最基础的 TypeScript，零帧起手 TypeScript 进行开发。
+一个功能强大的 WebSocket 通信库，支持请求-响应模式、事件监听、客户端分组管理等功能。
 
-## 功能特性
+## 特性
 
-- ✅ **TypeScript 支持**：完整的 TypeScript 配置，支持 ESNext 和最新特性
-- ✅ **代码检查与格式化**：集成 ESLint + Prettier，保证代码质量
-- ✅ **路径别名**：支持 `@/` 指向 `src/`，`@@/` 指向项目根目录
-- ✅ **模块别名**：支持使用 `module-alias` 进行模块路径别名配置
-- ✅ **测试支持**：集成 Bun 内置测试框架
-- ✅ **时区处理**：默认配置为 `Asia/Shanghai` 时区
-- ✅ **终端颜色输出**：支持使用 `ansi-colors` 进行彩色终端输出
-- ✅ **JSX 支持**：配置支持 React JSX 语法
+- 🚀 **请求-响应模式**：类似 HTTP 的请求-响应模式，支持异步等待回复
+- 📡 **事件驱动**：支持事件监听和处理
+- 👥 **客户端分组**：支持将客户端分组管理，方便批量操作
+- 🔌 **自动重连**：客户端支持自动重连机制
+- 🛡️ **中间件支持**：支持中间件模式，方便扩展功能
+- 📦 **TypeScript 支持**：完整的 TypeScript 类型定义
+- 🌐 **多格式支持**：支持 ESM 和 IIFE 格式的客户端构建
 
-## 集成的库
-
-### 生产依赖
-
-- **[lodash](https://lodash.com/)** - JavaScript 工具函数库，提供常用的工具方法
-- **[moment-timezone](https://momentjs.com/timezone/)** - 时区和日期时间处理库
-- **[ansi-colors](https://github.com/doowb/ansi-colors)** - 终端颜色输出库
-- **[module-alias](https://github.com/ilearnio/module-alias)** - 模块路径别名支持
-
-### 开发依赖
-
-- **[TypeScript](https://www.typescriptlang.org/)** - TypeScript 编译器（peer dependency）
-- **[ESLint](https://eslint.org/)** - JavaScript/TypeScript 代码检查工具
-- **[Prettier](https://prettier.io/)** - 代码格式化工具
-- **[typescript-eslint](https://typescript-eslint.io/)** - TypeScript ESLint 插件和解析器
-- **@types/bun** - Bun 运行时类型定义
-- **@types/lodash** - lodash 类型定义
-- **@types/moment-timezone** - moment-timezone 类型定义
-
-## 安装依赖
+## 安装
 
 ```bash
-bun install
+npm install mas-socket
+# 或
+bun add mas-socket
 ```
 
-## 运行
+## 快速开始
 
-```bash
-# 使用 start 脚本运行
-bun start
+### 服务器端
 
-# 或直接运行
-bun run ./src/index.ts
+```typescript
+import express from 'express';
+import MasSocketServer from 'mas-socket';
+
+const app = express();
+const server = app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+
+const masSocket = new MasSocketServer();
+
+// 绑定到 HTTP 服务器
+masSocket.bind(server);
+
+// 监听客户端连接
+masSocket.onConnect = (client) => {
+  console.log('客户端连接:', client.id);
+};
+
+// 监听客户端断开
+masSocket.onDisconnect = (client, type) => {
+  console.log('客户端断开:', client.id, type);
+};
+
+// 注册事件处理器
+masSocket.on('hello', async ({ reply, body, user }) => {
+  console.log('收到消息:', body.data, '来自:', user.id);
+  reply({ message: 'Hello from server!' });
+});
+
+// 向客户端发送请求
+const response = await masSocket.fetch('client-id', 'getUserInfo', { userId: '123' });
+console.log('客户端回复:', response);
 ```
 
-## MasSocket 打包
+### 客户端（浏览器）
 
-```bash
-# 构建客户端（ESM + IIFE）和服务端
-bun run build
+#### 使用 ESM 模块
 
-# 仅构建客户端（ESM）
-bun run build:client
+```typescript
+import MasSocketClinet from 'mas-socket/client';
 
-# 仅构建客户端（IIFE，可直接 <script> 引用）
-bun run build:client:iife
+const client = new MasSocketClinet();
 
-# 仅构建服务端
-bun run build:server
+// 连接到服务器
+client.connect('ws://localhost:3000');
+
+// 监听连接断开
+client.onDisconnect = () => {
+  console.log('连接已断开');
+};
+
+// 注册事件处理器
+client.on('hello', async ({ reply, body }) => {
+  console.log('收到服务器消息:', body.data);
+  reply({ message: 'Hello from client!' });
+});
+
+// 向服务器发送请求
+const response = await client.fetch('getUserInfo', { userId: '123' });
+console.log('服务器回复:', response);
 ```
 
-产物目录：
-- `dist/client/index.js`（浏览器 ESM）
-- `dist/client/index.iife.js`（浏览器 IIFE）
-- `dist/server/index.js`（服务端 ESM）
-
-## MasSocket 浏览器使用
-
-### ESM
+#### 使用 IIFE 格式（直接在 HTML 中使用）
 
 ```html
-<script type="module">
-  import MasSocketClinet from './dist/client/index.js';
-  const client = new MasSocketClinet();
-  client.connect('ws://localhost:3000');
-</script>
-```
-
-### HTML 直接引用（IIFE）
-
-```html
-<script src="./dist/client/index.iife.js"></script>
+<script src="https://unpkg.com/mas-socket/dist/client/index.iife.js"></script>
 <script>
   const client = new MasSocketClinet();
   client.connect('ws://localhost:3000');
+  
+  client.on('hello', async ({ reply, body }) => {
+    console.log('收到消息:', body.data);
+    reply({ message: 'Hello!' });
+  });
 </script>
 ```
 
-## 项目配置
+## API 文档
 
-### TypeScript 配置
+### 服务器端 API
 
-- 目标：ESNext
-- 模块系统：Preserve（Bun 原生模块系统）
-- 严格模式：已启用
-- 路径别名：
-  - `@/*` → `./src/*`
-  - `@@/*` → `./*`
+#### `MasSocketServer`
 
-### ESLint 配置
+#### 方法
 
-- 使用 TypeScript ESLint 推荐配置
-- 集成 Prettier 进行代码格式化
-- 未使用的变量会显示警告（以 `_` 开头的变量会被忽略）
+##### `bind(appOrServer: Express | HttpServer): void`
+
+将 WebSocket 服务器绑定到 Express 应用或 HTTP 服务器。
+
+```typescript
+const masSocket = new MasSocketServer();
+masSocket.bind(server);
+```
+
+##### `on(event: string, handler: EventHandler): void`
+
+注册事件监听器。
+
+```typescript
+masSocket.on('userLogin', async ({ reply, body, user }) => {
+  // 处理用户登录逻辑
+  reply({ success: true });
+});
+```
+
+##### `use(handler: EventHandler): void`
+
+注册中间件。中间件会在所有事件处理之前执行。
+
+```typescript
+masSocket.use(async ({ reply, body, user, event }) => {
+  // 认证中间件
+  if (!user.id) {
+    reply(null, 401, 'Unauthorized');
+    return;
+  }
+});
+```
+
+##### `fetch(id: string | string[], event: string, data: any, config?: FetchConfig): Promise<any>`
+
+向指定客户端发送请求并等待回复。
+
+```typescript
+// 向单个客户端发送请求
+const response = await masSocket.fetch('client-id', 'getData', { id: '123' });
+
+// 向多个客户端发送请求
+const responses = await masSocket.fetch(
+  ['client-1', 'client-2'],
+  'getData',
+  { id: '123' }
+);
+
+// 不需要回复的请求
+await masSocket.fetch('client-id', 'notify', { message: 'Hello' }, {
+  hasReply: false
+});
+```
+
+##### `fetchByGroup(group: string | string[], event: string, data: any, config?: FetchConfig): Promise<any>`
+
+向指定组内的所有客户端发送请求并等待回复。
+
+```typescript
+const responses = await masSocket.fetchByGroup('admins', 'getStatus', {});
+```
+
+##### `addGroup(group: string, id: string): void`
+
+将客户端添加到指定组。
+
+```typescript
+masSocket.addGroup('admins', 'client-id');
+```
+
+##### `removeGroup(group: string, id: string): void`
+
+将客户端从指定组中移除。
+
+```typescript
+masSocket.removeGroup('admins', 'client-id');
+```
+
+##### `close(ids: string[] | string): void`
+
+关闭指定的客户端连接。
+
+```typescript
+masSocket.close('client-id');
+masSocket.close(['client-1', 'client-2']);
+```
+
+##### `closeByGroups(groups: string[]): void`
+
+关闭指定组内的所有客户端连接。
+
+```typescript
+masSocket.closeByGroups(['admins', 'users']);
+```
+
+##### `closeAll(): void`
+
+关闭所有客户端连接。
+
+```typescript
+masSocket.closeAll();
+```
+
+#### 属性
+
+##### `clientsList: User[]`
+
+获取当前连接的客户端列表。
+
+```typescript
+const clients = masSocket.clientsList;
+console.log('当前连接数:', clients.length);
+```
+
+##### `groups: Record<string, string[]>`
+
+获取所有分组信息。
+
+```typescript
+const groups = masSocket.groups;
+console.log('分组:', groups);
+```
+
+##### `fetchConfig: FetchConfig`
+
+默认的请求配置。
+
+```typescript
+masSocket.fetchConfig = {
+  maxWait: 5000,      // 最大等待时间（毫秒）
+  hasReply: true,     // 是否需要回复
+  code: 200,          // 默认状态码
+  msg: 'success'      // 默认消息
+};
+```
+
+##### `maxMessageSize: number`
+
+最大消息大小（字节），默认 1MB。
+
+```typescript
+masSocket.maxMessageSize = 2 * 1024 * 1024; // 2MB
+```
+
+##### `onConnect: (client: User) => void`
+
+客户端连接时的回调函数。
+
+```typescript
+masSocket.onConnect = (client) => {
+  console.log('新客户端连接:', client.id);
+};
+```
+
+##### `onDisconnect: (client: User, type: string) => void`
+
+客户端断开连接时的回调函数。
+
+```typescript
+masSocket.onDisconnect = (client, type) => {
+  console.log('客户端断开:', client.id, type);
+};
+```
+
+### 客户端 API
+
+#### `MasSocketClinet`
+
+#### 方法
+
+##### `connect(url: string): void`
+
+连接到 WebSocket 服务器。
+
+```typescript
+client.connect('ws://localhost:3000');
+```
+
+##### `close(): void`
+
+关闭与服务器的连接。
+
+```typescript
+client.close();
+```
+
+##### `fetch(event: string, data: any, config?: FetchConfig): Promise<any>`
+
+向服务器发送请求并等待回复。
+
+```typescript
+const response = await client.fetch('getData', { id: '123' });
+```
+
+##### `on(event: string, handler: EventHandler): void`
+
+注册事件监听器。
+
+```typescript
+client.on('message', async ({ reply, body }) => {
+  console.log('收到消息:', body.data);
+  reply({ received: true });
+});
+```
+
+##### `use(handler: EventHandler): void`
+
+注册中间件。
+
+```typescript
+client.use(async ({ reply, body, event }) => {
+  // 处理逻辑
+});
+```
+
+##### `getConfig(): MasSocketServerClinetConfig`
+
+获取当前配置。
+
+```typescript
+const config = client.getConfig();
+console.log('连接状态:', config.status);
+```
+
+##### `setConfig(config: Partial<ServerClinetConfig>): void`
+
+设置客户端配置。
+
+```typescript
+client.setConfig({
+  maxReconnectCount: 10,      // 最大重连次数
+  maxConnectTimeout: 15000     // 最大连接超时时间（毫秒）
+});
+```
+
+#### 属性
+
+##### `fetchConfig: FetchConfig`
+
+默认的请求配置。
+
+```typescript
+client.fetchConfig = {
+  maxWait: 5000,
+  hasReply: true,
+  code: 200,
+  msg: 'success'
+};
+```
+
+##### `onDisconnect: () => void`
+
+连接断开时的回调函数。
+
+```typescript
+client.onDisconnect = () => {
+  console.log('连接已断开');
+};
+```
+
+## 类型定义
+
+### `User`
+
+```typescript
+interface User {
+  id: string;
+  groups: string[];
+}
+```
+
+### `Message`
+
+```typescript
+interface Message {
+  code: number;
+  data: any;
+  msg: string;
+}
+```
+
+### `FetchConfig`
+
+```typescript
+interface FetchConfig {
+  maxWait?: number;      // 最大等待时间（毫秒）
+  hasReply?: boolean;    // 是否需要回复
+  code?: number;         // 消息状态码
+  msg?: string;          // 消息描述
+}
+```
+
+### `EventHandler`
+
+```typescript
+type EventHandler = (args: {
+  reply: (data: any, code?: number, msg?: string) => void;
+  body: Message;
+  user?: User;           // 服务器端可用
+  fetchId: string;
+  header: Record<string, string>;
+  event: string;
+}) => Promise<void>;
+```
 
 ## 使用示例
 
-### 路径别名使用
+### 完整的服务器示例
 
 ```typescript
-// 使用 @/ 引用 src 目录下的文件
-import { something } from '@/utils/helper';
+import express from 'express';
+import MasSocketServer from 'mas-socket';
 
-// 使用 @@/ 引用根目录下的文件
-import config from '@@/config';
+const app = express();
+const server = app.listen(3000);
+
+const masSocket = new MasSocketServer();
+masSocket.bind(server);
+
+// 中间件：日志记录
+masSocket.use(async ({ body, user, event }) => {
+  console.log(`[${new Date().toISOString()}] ${user?.id} -> ${event}:`, body.data);
+});
+
+// 中间件：认证
+masSocket.use(async ({ reply, body, user }) => {
+  const token = body.data?.token;
+  if (!token || token !== 'secret-token') {
+    reply(null, 401, 'Unauthorized');
+    return;
+  }
+});
+
+// 事件：用户登录
+masSocket.on('login', async ({ reply, body, user }) => {
+  // 将用户添加到组
+  masSocket.addGroup('users', user.id);
+  masSocket.addGroup('online', user.id);
+  
+  reply({ success: true, userId: user.id });
+});
+
+// 事件：获取在线用户列表
+masSocket.on('getOnlineUsers', async ({ reply }) => {
+  const onlineUsers = masSocket.clientsList;
+  reply({ users: onlineUsers });
+});
+
+// 事件：广播消息
+masSocket.on('broadcast', async ({ reply, body }) => {
+  await masSocket.fetchByGroup('users', 'message', body.data, {
+    hasReply: false
+  });
+  reply({ success: true });
+});
+
+masSocket.onConnect = (client) => {
+  console.log('新客户端连接:', client.id);
+};
+
+masSocket.onDisconnect = (client, type) => {
+  console.log('客户端断开:', client.id, type);
+};
 ```
 
-### 时区处理
+### 完整的客户端示例
 
 ```typescript
-import moment from 'moment-timezone';
-// 默认时区已设置为 Asia/Shanghai
-console.log(moment().format()); // 输出当前上海时间
+import MasSocketClinet from 'mas-socket/client';
+
+const client = new MasSocketClinet();
+
+// 配置
+client.setConfig({
+  maxReconnectCount: 10,
+  maxConnectTimeout: 15000
+});
+
+client.fetchConfig = {
+  maxWait: 5000,
+  hasReply: true
+};
+
+// 连接
+client.connect('ws://localhost:3000');
+
+// 监听系统事件：获取客户端 ID
+client.on('_system_id', async ({ body }) => {
+  console.log('我的客户端 ID:', body.data.id);
+});
+
+// 监听消息
+client.on('message', async ({ reply, body }) => {
+  console.log('收到广播消息:', body.data);
+  reply({ received: true });
+});
+
+// 登录
+client.on('login', async ({ reply, body }) => {
+  console.log('登录成功:', body.data);
+});
+
+// 发送登录请求
+client.fetch('login', { token: 'secret-token' })
+  .then(response => {
+    console.log('登录响应:', response);
+  })
+  .catch(error => {
+    console.error('登录失败:', error);
+  });
+
+client.onDisconnect = () => {
+  console.log('连接已断开，尝试重连...');
+};
 ```
 
-### 终端颜色输出
+## 构建
 
-```typescript
-import c from 'ansi-colors';
-console.log(c.bgGreen('Hello World'));
+```bash
+# 构建所有文件
+bun run build
+
+# 仅构建客户端
+bun run build:client
+
+# 仅构建服务器
+bun run build:server
 ```
 
-## 关于
+## 许可证
 
-本项目使用 `bun init` 创建，基于 Bun 运行时。 [Bun](https://bun.com) 是一个快速的全能 JavaScript 运行时，集成了打包器、测试运行器和包管理器。
+MIT
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！

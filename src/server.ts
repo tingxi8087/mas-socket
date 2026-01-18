@@ -22,7 +22,7 @@ interface ClientConnection {
  * 事件处理器类型
  */
 type EventHandler = (args: {
-  reply: (data: any) => void;
+  reply: (data: any, code?: number, msg?: string) => void;
   body: Message;
   user: User;
   fetchId: string;
@@ -203,7 +203,7 @@ class MasSocketServer {
     let message: InternalMessage;
     try {
       message = JSON.parse(rawMessage) as InternalMessage;
-    } catch (_error) {
+    } catch {
       // 消息解析失败，发送错误回复
       this.sendMessage(ws, {
         type: 'reply',
@@ -244,13 +244,27 @@ class MasSocketServer {
     // 如果是事件消息，执行中间件和事件处理器
     if (type === 'event' && event) {
       let replied = false;
-      const reply = (data: any) => {
+      const reply = (data: any, code?: number, msg?: string) => {
         if (replied) return;
         replied = true;
+        
+        // 如果 data 是对象且包含 code 和 msg，则使用对象格式（向后兼容）
+        let replyBody: Message;
+        if (data && typeof data === 'object' && 'code' in data && 'msg' in data) {
+          replyBody = data as Message;
+        } else {
+          // 使用新的参数格式
+          replyBody = {
+            code: code ?? this.fetchConfig.code ?? 200,
+            data: data,
+            msg: msg ?? this.fetchConfig.msg ?? 'success',
+          };
+        }
+        
         this.sendMessage(ws, {
           type: 'reply',
           fetchId,
-          body: data,
+          body: replyBody,
         });
       };
 
@@ -269,11 +283,7 @@ class MasSocketServer {
         } catch (error) {
           console.error('Middleware error:', error);
           if (!replied) {
-            reply({
-              code: 500,
-              data: null,
-              msg: 'Middleware error',
-            });
+            reply(null, 500, 'Middleware error');
           }
           return;
         }
@@ -296,11 +306,7 @@ class MasSocketServer {
           } catch (error) {
             console.error(`Event handler error for ${event}:`, error);
             if (!replied) {
-              reply({
-                code: 500,
-                data: null,
-                msg: 'Handler error',
-              });
+              reply(null, 500, 'Handler error');
             }
             return;
           }
@@ -308,11 +314,7 @@ class MasSocketServer {
 
         // 如果没有处理器且需要回复，发送默认回复
         if (!replied && fetchId) {
-          reply({
-            code: 404,
-            data: null,
-            msg: `No handler for event: ${event}`,
-          });
+          reply(null, 404, `No handler for event: ${event}`);
         }
       }
     }
