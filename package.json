@@ -1,6 +1,6 @@
 {
   "name": "mas-socket",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "一个功能强大的 WebSocket 通信库，支持请求-响应模式、事件监听、客户端分组管理等功能",
   "keywords": [
     "websocket",
@@ -33,7 +33,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/tingxi8087/mas-socket"
   },
   "devDependencies": {
     "@types/bun": "latest",
